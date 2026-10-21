@@ -21,7 +21,26 @@ main{padding:16px;display:grid;gap:14px}.tabs{display:flex;gap:8px;flex-wrap:wra
 footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 16px}
 @media(min-width:700px){main{grid-template-columns:1fr 1fr;align-items:start}.tabs,.full{grid-column:1/-1}.results{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:420px){main{padding:10px}.card{padding:13px}.grid{gap:9px}.metric .value{font-size:17px}.tab,button{padding:10px 11px}}
-@media print{body{background:white;padding:0}header,.tabs,.no-print,footer{display:none!important}main{display:block;max-width:none;padding:0}.card{box-shadow:none;border:0;padding:0;margin:0 0 16px}.print-only{display:block!important}.item-row{break-inside:avoid}.metric{background:white}.field input{border:0;padding:0}.offer-view{display:block!important}}
+#printOffer{display:none}
+@media print{
+  @page{size:A4;margin:14mm}
+  body{background:#fff;padding:0;color:#111;font-size:10pt}
+  header,.tabs,.no-print,footer,#calculator,#saved,#offer>*:not(#printOffer){display:none!important}
+  main{display:block;max-width:none;padding:0;margin:0}
+  #offer{display:block!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important}
+  #printOffer{display:block!important}
+  #printOffer h1{font-size:21pt;color:#172554;margin:0 0 4mm}
+  #printOffer .print-meta{display:flex;justify-content:space-between;gap:10mm;border-bottom:2px solid #172554;padding-bottom:4mm;margin-bottom:6mm}
+  #printOffer .muted{color:#555}
+  #printOffer table{width:100%;border-collapse:collapse;margin:5mm 0;font-size:9pt}
+  #printOffer th,#printOffer td{border:1px solid #cbd5e1;padding:6px;text-align:left;vertical-align:top}
+  #printOffer th{background:#f1f5f9}
+  #printOffer .num{text-align:right;white-space:nowrap}
+  #printOffer .totals{width:78%;margin:7mm 0 0 auto}
+  #printOffer .totals div{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #ddd}
+  #printOffer .totals .grand{font-size:12pt;font-weight:700;border-top:2px solid #172554;border-bottom:0;margin-top:4px;padding-top:8px}
+  #printOffer .profit{margin-top:5mm;padding:3mm;background:#f8fafc;border:1px solid #ddd}
+}
 </style>
 </head>
 <body>
@@ -63,6 +82,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 16px}
       <div class="summaryline"><span>Ukupna zarada</span><strong id="totalProfit">€ 0,00</strong></div>
     </div>
     <p class="note no-print">Za PDF odaberi „Izvezi / ispiši PDF”, a u prozoru za ispis odaberi „Spremi kao PDF”.</p>
+    <div id="printOffer" aria-hidden="true"></div>
   </section>
   <section id="saved" class="card hidden">
     <h2>Spremljene ponude</h2>
@@ -177,9 +197,43 @@ function loadOffer(id){
  $('offerName').value=o.name;$('offerDate').value=o.date;$('items').innerHTML='';itemCounter=0;o.items.forEach(i=>addItem(i));
  document.querySelector('[data-tab="offer"]').click();updateTotals();
 }
+function escapeHtml(value){
+ return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
 function exportPdf(){
- const oldTitle=document.title;document.title=($('offerName').value.trim()||'Ponuda')+' - KalkulatorCijena';
- window.print();setTimeout(()=>document.title=oldTitle,1000);
+ const items=getItems();
+ if(!items.length){alert('Dodaj barem jednu stavku prije izvoza ponude.');return;}
+ updateTotals();
+ const name=$('offerName').value.trim()||'Ponuda';
+ const date=$('offerDate').value||new Date().toISOString().slice(0,10);
+ let totalNet=0,totalVat=0,totalGross=0,totalProfit=0;
+ const rows=items.map((i,index)=>{
+   const net=i.net*i.qty, vat=(i.gross-i.net)*i.qty, gross=i.gross*i.qty, profit=(i.net-i.supplier)*i.qty;
+   totalNet+=net;totalVat+=vat;totalGross+=gross;totalProfit+=profit;
+   return `<tr>
+     <td>${index+1}</td><td>${escapeHtml(i.name||'Stavka')}</td><td class="num">${i.qty}</td>
+     <td class="num">${euro(i.purchase)}</td><td class="num">${euro(i.supplier)}</td>
+     <td class="num">${euro(i.net)}</td><td class="num">${euro(i.gross)}</td>
+     <td class="num">${euro(profit)}</td>
+   </tr>`;
+ }).join('');
+ $('printOffer').innerHTML=`
+   <h1>PONUDA</h1>
+   <div class="print-meta"><div><strong>${escapeHtml(name)}</strong><br><span class="muted">KalkulatorCijena</span></div><div><strong>Datum:</strong> ${escapeHtml(date)}</div></div>
+   <table><thead><tr><th>Br.</th><th>Stavka</th><th class="num">Kol.</th><th class="num">Nabavna cijena/kom.</th><th class="num">Dobavljačka cijena/kom.</th><th class="num">Prodajna cijena bez PDV-a/kom.</th><th class="num">Prodajna cijena s PDV-om/kom.</th><th class="num">Zarada/stavka</th></tr></thead><tbody>${rows}</tbody></table>
+   <div class="totals">
+     <div><span>Ukupno bez PDV-a</span><strong>${euro(totalNet)}</strong></div>
+     <div><span>PDV (25%)</span><strong>${euro(totalVat)}</strong></div>
+     <div class="grand"><span>Ukupno s PDV-om</span><strong>${euro(totalGross)}</strong></div>
+   </div>
+   <div class="profit"><strong>Ukupna zarada (bez PDV-a): ${euro(totalProfit)}</strong></div>
+   <p class="muted" style="margin-top:10mm;font-size:8pt">Iznosi su iskazani u eurima. PDV: 25%.</p>`;
+ const oldTitle=document.title;
+ document.title=(name+' - Ponuda').replace(/[\\/:*?"<>|]/g,'-');
+ const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore);};
+ window.addEventListener('afterprint',restore);
+ window.print();
+ setTimeout(restore,3000);
 }
 $('exportPdf').addEventListener('click',exportPdf);
 addItem();
